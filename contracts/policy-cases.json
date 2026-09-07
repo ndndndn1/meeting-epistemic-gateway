@@ -51,5 +51,24 @@
     "mode": "NORMAL",
     "unsupported": 1,
     "calibrated": 0
+  },
+  {
+    "name": "model knowledge is neutral in both streaks",
+    "statuses": [
+      "UNSUPPORTED ASSERTION",
+      "GENERAL_KNOWLEDGE",
+      "UNSUPPORTED ASSERTION",
+      "GENERAL_KNOWLEDGE",
+      "UNSUPPORTED ASSERTION",
+      "GENERAL_KNOWLEDGE",
+      "VERIFIED",
+      "GENERAL_KNOWLEDGE",
+      "VERIFIED",
+      "GENERAL_KNOWLEDGE",
+      "VERIFIED"
+    ],
+    "mode": "NORMAL",
+    "unsupported": 0,
+    "calibrated": 3
   }
 ]

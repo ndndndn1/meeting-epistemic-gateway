@@ -11,7 +11,7 @@ await writeFile(
     run_id: process.env.GITHUB_RUN_ID ?? "",
     run_number: process.env.GITHUB_RUN_NUMBER ?? "",
     deployed_at: new Date().toISOString(),
-    version: "0.1.0",
+    version: "0.2.0",
     prerelease: true,
   }),
 );

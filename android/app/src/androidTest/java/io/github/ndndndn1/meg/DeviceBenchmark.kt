@@ -33,7 +33,13 @@ class DeviceBenchmark {
             llm.load(models.path(which))
             analyst.localReady = true
             val audio =
-                AudioEngine(models, { false }, {}, { _, _, _, _ -> }, { throw AssertionError(it) })
+                AudioEngine(
+                    models,
+                    { false },
+                    {},
+                    { _, _, _, _, _ -> },
+                    { throw AssertionError(it) },
+                )
             audio.prepare()
             val loadMs = (System.nanoTime() - start) / 1000000
             val m = emptyMeeting()

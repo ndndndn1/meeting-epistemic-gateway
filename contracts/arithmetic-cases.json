@@ -1,0 +1,46 @@
+[
+  {
+    "text": "1+1은 2입니다",
+    "status": "VERIFIED"
+  },
+  {
+    "text": "1+1은 3입니다",
+    "status": "CONTRADICTED"
+  },
+  {
+    "text": "0.1 + 0.2 = 0.3",
+    "status": "VERIFIED"
+  },
+  {
+    "text": "-2 * 3 = -6",
+    "status": "VERIFIED"
+  },
+  {
+    "text": "6 나누기 3은 2입니다",
+    "status": "VERIFIED"
+  },
+  {
+    "text": "1 / 3 = 0.333",
+    "status": "CONTRADICTED"
+  },
+  {
+    "text": "1/0=2",
+    "status": null
+  },
+  {
+    "text": "1+1은 2입니다. 따라서 모두 맞습니다",
+    "status": null
+  },
+  {
+    "text": "가격이 1+1은 2입니다",
+    "status": null
+  },
+  {
+    "text": "1 더하기 1은 2입니다",
+    "status": "VERIFIED"
+  },
+  {
+    "text": "10 - 3 = 7",
+    "status": "VERIFIED"
+  }
+]

@@ -109,6 +109,14 @@ self.onmessage = async (e) => {
       postMessage({ type: "ready" });
       return;
     }
+    if (e.data.type === "reset") {
+      vad?.reset();
+      history.fill(0);
+      history = new Float32Array(0);
+      historyStart = 0;
+      total = 0;
+      return;
+    }
     if (e.data.type === "pcm") {
       const { pcm, speaking, at } = e.data;
       if (speaking) {
@@ -193,6 +201,7 @@ self.onmessage = async (e) => {
           if (result.text?.trim())
             postMessage({
               type: "utterance",
+              generation: e.data.generation,
               text: result.text,
               speaker,
               certain,

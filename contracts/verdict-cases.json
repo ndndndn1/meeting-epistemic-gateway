@@ -1,0 +1,108 @@
+[
+  {
+    "name": "stable knowledge",
+    "raw": {
+      "claims": [
+        {
+          "text": "지구는 태양 주위를 공전한다",
+          "status": "GENERAL_KNOWLEDGE",
+          "basis": "MODEL_KNOWLEDGE",
+          "reason": "fixture",
+          "evidenceIds": []
+        }
+      ]
+    },
+    "evidence": [],
+    "expected": "GENERAL_KNOWLEDGE"
+  },
+  {
+    "name": "current knowledge",
+    "raw": {
+      "claims": [
+        {
+          "text": "현재 대통령은 누군가다",
+          "status": "GENERAL_KNOWLEDGE",
+          "basis": "MODEL_KNOWLEDGE",
+          "reason": "fixture",
+          "evidenceIds": []
+        }
+      ]
+    },
+    "evidence": [],
+    "expected": "UNVERIFIABLE"
+  },
+  {
+    "name": "unsupported memory",
+    "raw": {
+      "claims": [
+        {
+          "text": "단정",
+          "status": "UNSUPPORTED ASSERTION",
+          "basis": "MODEL_KNOWLEDGE",
+          "reason": "fixture",
+          "evidenceIds": []
+        }
+      ]
+    },
+    "evidence": [],
+    "expected": "UNVERIFIABLE"
+  },
+  {
+    "name": "missing source",
+    "raw": {
+      "claims": [
+        {
+          "text": "장비 입력 전압은 24V이다",
+          "status": "VERIFIED",
+          "basis": "DOCUMENT",
+          "reason": "fixture",
+          "evidenceIds": []
+        }
+      ]
+    },
+    "evidence": [],
+    "expected": "UNVERIFIABLE"
+  },
+  {
+    "name": "document conflict",
+    "raw": {
+      "claims": [
+        {
+          "text": "장비 입력 전압은 25V이다",
+          "status": "CONTRADICTED",
+          "basis": "DOCUMENT",
+          "reason": "fixture",
+          "evidenceIds": ["doc"]
+        }
+      ]
+    },
+    "evidence": [
+      {
+        "id": "doc",
+        "text": "장비 입력 전압은 24V이다",
+        "title": "매뉴얼",
+        "source": "매뉴얼",
+        "version": "1",
+        "checkedAt": 1,
+        "basis": "DOCUMENT"
+      }
+    ],
+    "expected": "CONTRADICTED"
+  },
+  {
+    "name": "search failure",
+    "raw": {
+      "claims": [
+        {
+          "text": "단정",
+          "status": "UNSUPPORTED ASSERTION",
+          "basis": "WEB",
+          "reason": "fixture",
+          "evidenceIds": []
+        }
+      ]
+    },
+    "evidence": [],
+    "expected": "UNVERIFIABLE"
+  }
+]

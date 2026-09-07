@@ -13,9 +13,13 @@ class AudioEngine(
     private val models: ModelStore,
     private val speaking: () -> Boolean,
     private val interrupt: () -> Unit,
-    private val onText: (String, String?, FloatArray?, Long) -> Unit,
+    private val onText: (String, String?, FloatArray?, Long, Long) -> Unit,
     private val error: (String) -> Unit,
 ) {
+    var onPcm: ((ShortArray, Int, Long) -> Unit)? = null
+    @Volatile private var generation = 0
+    private var captureThread: Thread? = null
+    private var speechThread: Thread? = null
     private var recognizer: OfflineRecognizer? = null
     private var extractor: SpeakerEmbeddingExtractor? = null
     private var vad: Vad? = null
@@ -23,10 +27,14 @@ class AudioEngine(
     private var recorder: AudioRecord? = null
     private var echo: AcousticEchoCanceler? = null
     @Volatile private var active = false
-    private val queue = ArrayBlockingQueue<Pair<FloatArray, Long>>(512)
+
+    private data class Frame(val pcm: FloatArray, val at: Long, val ownVoice: Boolean)
+
+    private val queue = ArrayBlockingQueue<Frame>(512)
     val profiles = linkedMapOf<String, FloatArray>()
 
     fun prepare() {
+        check(!active && speechThread?.isAlive != true) { "이전 음성 작업 정리 중입니다. 잠시 후 모델을 준비하세요." }
         diarizer?.release()
         diarizer =
             OfflineSpeakerDiarization(
@@ -99,6 +107,12 @@ class AudioEngine(
     fun start() {
         check(recognizer != null) { "음성 모델을 먼저 준비하세요." }
         if (active) return
+        check(speechThread?.isAlive != true && captureThread?.isAlive != true) {
+            "이전 음성 작업을 정리 중입니다. 잠시 후 재개하세요."
+        }
+        val run = ++generation
+        vad!!.reset()
+        queue.clear()
         val r =
             AudioRecord(
                 MediaRecorder.AudioSource.VOICE_COMMUNICATION,
@@ -113,49 +127,67 @@ class AudioEngine(
             echo = AcousticEchoCanceler.create(r.audioSessionId)?.apply { enabled = true }
         active = true
         r.startRecording()
-        thread(name = "meg-capture") {
-            try {
-                val b = ShortArray(512)
-                while (active) {
-                    val n = r.read(b, 0, b.size)
-                    if (n < 0) throw IllegalStateException("마이크 읽기 실패")
-                    if (n == 0) continue
-                    val pcm = FloatArray(n) { b[it] / 32768f }
-                    if (!queue.offer(pcm to System.currentTimeMillis()))
-                        throw IllegalStateException("음성 처리가 실시간 속도를 따라가지 못했습니다.")
+        captureThread =
+            thread(name = "meg-capture") {
+                try {
+                    val b = ShortArray(512)
+                    while (active && generation == run) {
+                        val n = r.read(b, 0, b.size)
+                        if (n < 0) throw IllegalStateException("마이크 읽기 실패")
+                        if (n == 0) continue
+                        if (!active || generation != run) break
+                        val now = System.currentTimeMillis()
+                        onPcm?.invoke(b, n, now)
+                        val pcm = FloatArray(n) { b[it] / 32768f }
+                        if (!queue.offer(Frame(pcm, now, speaking())))
+                            throw IllegalStateException("음성 처리가 실시간 속도를 따라가지 못했습니다.")
+                    }
+                } catch (e: Exception) {
+                    if (active) error(e.message ?: "음성 오류")
+                    active = false
                 }
-            } catch (e: Exception) {
-                if (active) error(e.message ?: "음성 오류")
-                active = false
             }
-        }
-        thread(name = "meg-speech") {
-            try {
-                while (active) {
-                    val frame = queue.poll(1, java.util.concurrent.TimeUnit.SECONDS) ?: continue
-                    val (pcm, at) = frame
-                    if (speaking()) {
-                        if (sqrt(pcm.sumOf { (it * it).toDouble() } / pcm.size) > .12) interrupt()
-                        vad!!.reset()
+        speechThread =
+            thread(name = "meg-speech") {
+                var vadOrigin = 0L
+                var fed = 0L
+                try {
+                    while (active && generation == run) {
+                        val frame = queue.poll(1, java.util.concurrent.TimeUnit.SECONDS) ?: continue
+                        val (pcm, at, ownVoice) = frame
+                        if (ownVoice) {
+                            if (sqrt(pcm.sumOf { (it * it).toDouble() } / pcm.size) > .12)
+                                interrupt()
+                            vad!!.reset()
+                            fed = 0
+                            vadOrigin = 0
+                            pcm.fill(0f)
+                            continue
+                        }
+                        if (fed == 0L) vadOrigin = at - pcm.size * 1000L / 16000
+                        fed += pcm.size
+                        vad!!.acceptWaveform(pcm)
                         pcm.fill(0f)
-                        continue
+                        while (!vad!!.empty()) {
+                            val segment = vad!!.front()
+                            vad!!.pop()
+                            val start = vadOrigin + segment.start * 1000L / 16000
+                            process(
+                                segment.samples,
+                                start + segment.samples.size * 1000L / 16000,
+                                start,
+                                run,
+                            )
+                        }
                     }
-                    vad!!.acceptWaveform(pcm)
-                    pcm.fill(0f)
-                    while (!vad!!.empty()) {
-                        val segment = vad!!.front()
-                        vad!!.pop()
-                        process(segment.samples, at)
-                    }
+                } catch (e: Exception) {
+                    if (active) error(e.message ?: "음성 분석 실패")
+                    active = false
+                } finally {
+                    queue.forEach { it.pcm.fill(0f) }
+                    queue.clear()
                 }
-            } catch (e: Exception) {
-                if (active) error(e.message ?: "음성 분석 실패")
-                active = false
-            } finally {
-                queue.forEach { it.first.fill(0f) }
-                queue.clear()
             }
-        }
     }
 
     private fun embedding(samples: FloatArray): FloatArray? {
@@ -182,7 +214,12 @@ class AudioEngine(
         return dot / (sqrt(aa * bb) + 1e-9)
     }
 
-    fun process(samples: FloatArray, endedAt: Long) {
+    fun process(
+        samples: FloatArray,
+        endedAt: Long,
+        startedAt: Long = endedAt - samples.size * 1000L / 16000,
+        expectedRun: Int? = null,
+    ) {
         if (samples.size >= 16000 * 19.5) {
             samples.fill(0f)
             return
@@ -199,7 +236,7 @@ class AudioEngine(
             val stable = single && left != null && right != null && cosine(left, right) > .6
             if (vector != null && stable) {
                 val matches =
-                    profiles
+                    synchronized(profiles) { profiles.toMap() }
                         .map { it.key to cosine(vector, it.value) }
                         .sortedByDescending { it.second }
                 val first = matches.firstOrNull()
@@ -211,7 +248,8 @@ class AudioEngine(
                     id = first.first
                 else if ((first == null || first.second < .4) && profiles.size < 6) {
                     id = java.util.UUID.randomUUID().toString()
-                    profiles[id] = vector
+                    if (expectedRun == null || expectedRun == generation)
+                        synchronized(profiles) { profiles[id] = vector }
                 }
             }
         }
@@ -220,7 +258,8 @@ class AudioEngine(
             stream.acceptWaveform(samples, 16000)
             recognizer!!.decode(stream)
             val text = recognizer!!.getResult(stream).text.trim()
-            if (text.isNotEmpty()) onText(text, id, vector, endedAt)
+            if (text.isNotEmpty() && (expectedRun == null || expectedRun == generation))
+                onText(text, id, vector, endedAt, startedAt)
         } finally {
             stream.release()
             samples.fill(0f)
@@ -228,15 +267,17 @@ class AudioEngine(
     }
 
     fun stop() {
+        generation++
         active = false
         try {
             recorder?.stop()
         } catch (_: Exception) {}
+        captureThread?.join(1000)
         recorder?.release()
         recorder = null
         echo?.release()
         echo = null
-        queue.forEach { it.first.fill(0f) }
+        queue.forEach { it.pcm.fill(0f) }
         queue.clear()
     }
 
@@ -253,7 +294,9 @@ class AudioEngine(
     }
 
     fun clearProfiles() {
-        profiles.values.forEach { it.fill(0f) }
-        profiles.clear()
+        synchronized(profiles) {
+            profiles.values.forEach { it.fill(0f) }
+            profiles.clear()
+        }
     }
 }

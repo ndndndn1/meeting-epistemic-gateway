@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var running by mutableStateOf(false)
     private var ready by mutableStateOf(false)
+    private var preparing by mutableStateOf(false)
     private var tab by mutableStateOf(0)
     private lateinit var localVoice: LocalVoice
     private lateinit var models: ModelStore
@@ -41,6 +42,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var audio: AudioEngine
     private lateinit var tts: TextToSpeech
     private val work = Executors.newSingleThreadExecutor()
+    private val calculationWork = Executors.newSingleThreadExecutor()
+    private val documentWork = Executors.newSingleThreadExecutor()
+    private var archive: SessionArchive? = null
+    private var archivePath by mutableStateOf("")
+    private var savedMeetings by mutableStateOf(listOf<Pair<String, Uri>>())
+    private var player by mutableStateOf<android.media.MediaPlayer?>(null)
+    private var playToken = 0
+    private var executionMode by mutableStateOf(ExecutionMode.AUTO)
+    private val settings by lazy { getSharedPreferences("meg-settings", MODE_PRIVATE) }
     @Volatile private var epoch = 0
     @Volatile private var speaking = false
     private var interrupted = false
@@ -51,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private val speechPoll =
         object : Runnable {
             override fun run() {
+                archive?.ai(speaking)
                 if (running && !speaking) {
                     val c =
                         meeting.getJSONArray("claims").objects().firstOrNull {
@@ -64,7 +75,12 @@ class MainActivity : ComponentActivity() {
                     if (c != null) {
                         say(
                             "잠시 사실관계를 확인하겠습니다. " +
-                                if (c.getString("status") == "CONTRADICTED")
+                                if (
+                                    c.getString("status") == "CONTRADICTED" &&
+                                        c.optString("basis") == "CALCULATION"
+                                )
+                                    "계산 결과가 다릅니다. 화면의 계산식을 확인해 주세요."
+                                else if (c.getString("status") == "CONTRADICTED")
                                     "현재 자료와 충돌합니다. 화면의 출처를 확인해 주세요."
                                 else "현재 자료에서 근거를 찾지 못했습니다. 근거나 경험, 추정 여부를 알려주세요."
                         )
@@ -86,7 +102,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private var includeProfiles = false
-    private var remote by mutableStateOf(false)
     private var web by mutableStateOf(true)
     private var model by mutableStateOf("")
     private var catalog by mutableStateOf(listOf<Pair<String, String>>())
@@ -128,9 +143,24 @@ class MainActivity : ComponentActivity() {
     private val addDocument =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null)
-                background {
-                    val name = uri.lastPathSegment ?: "회의 자료"
+                background(documentWork) {
+                    val importEpoch = epoch
+                    val began = System.nanoTime()
+                    val name =
+                        contentResolver
+                            .query(
+                                uri,
+                                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                                null,
+                                null,
+                                null,
+                            )
+                            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "회의 자료"
                     val data = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                    val hash =
+                        java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(data)
+                            .joinToString("") { "%02x".format(it) }
                     require(data.size < 25_000_000) { "파일당 25MB까지 지원합니다." }
                     val chunks = mutableListOf<Pair<Int?, String>>()
                     if (contentResolver.getType(uri) == "application/pdf") {
@@ -147,8 +177,26 @@ class MainActivity : ComponentActivity() {
                         require(chunks.isNotEmpty()) { "텍스트가 없는 PDF입니다. OCR은 지원하지 않습니다." }
                     } else chunks.add(null to data.toString(Charsets.UTF_8))
                     runOnUiThread {
-                        change { m -> chunks.forEach { addEvidence(m, it.second, name, it.first) } }
-                        notice = "자료를 추가했습니다."
+                        if (epoch != importEpoch) return@runOnUiThread
+                        change { m ->
+                            if (
+                                m.getJSONArray("evidence").objects().none {
+                                    it.optString("documentHash") == hash
+                                }
+                            )
+                                chunks.forEach { addEvidence(m, it.second, name, it.first, hash) }
+                        }
+                        val ms = (System.nanoTime() - began) / 1000000
+                        archive?.event(
+                            "DOCUMENT_INDEXED",
+                            JSONObject()
+                                .put("name", name)
+                                .put("sha256", hash)
+                                .put("bytes", data.size)
+                                .put("pages", chunks.size)
+                                .put("durationMs", ms),
+                        )
+                        notice = "자료 추출·색인 완료 · $ms ms · ${chunks.size}페이지 · 발언에는 관련 발췌만 사용"
                     }
                 }
         }
@@ -168,6 +216,21 @@ class MainActivity : ComponentActivity() {
         speechHandler.post(speechPoll)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         PDFBoxResourceLoader.init(this)
+        model = settings.getString("model", "") ?: ""
+        web = settings.getBoolean("web", true)
+        executionMode =
+            runCatching { ExecutionMode.valueOf(settings.getString("mode", "AUTO")!!) }
+                .getOrDefault(ExecutionMode.AUTO)
+        documentWork.execute {
+            try {
+                val recovered = SessionArchive.recover(this)
+                runOnUiThread {
+                    if (recovered > 0) notice = "미완성 녹음·로그 ${recovered}개를 복구했습니다. 다운로드 폴더에서 확인하세요."
+                }
+            } catch (e: Exception) {
+                runOnUiThread { notice = "이전 기록 복구 실패: ${e.message}" }
+            }
+        }
         models = ModelStore(this)
         localVoice = LocalVoice(models)
         router = OpenRouter(this)
@@ -209,7 +272,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
-                { text, who, embedding, at ->
+                { text, who, embedding, at, startedAt ->
                     runOnUiThread {
                         if (running) {
                             if (
@@ -236,18 +299,26 @@ class MainActivity : ComponentActivity() {
                                                 )
                                         )
                                 }
-                            submit(text, who, at)
+                            val session = archive
+                            if (session != null)
+                                session.spans(startedAt, at) { refs ->
+                                    runOnUiThread {
+                                        if (archive === session)
+                                            submit(text, who, at, audioSpans = refs)
+                                    }
+                                }
+                            else submit(text, who, at)
                         }
                     }
                 },
                 { error ->
                     runOnUiThread {
                         notice = error
-                        running = false
-                        audio.stop()
+                        pauseMeeting("음성 오류")
                     }
                 },
             )
+        audio.onPcm = { pcm, n, at -> archive?.pcm(pcm, n, at) }
         setContent {
             MaterialTheme(
                 colorScheme =
@@ -265,12 +336,66 @@ class MainActivity : ComponentActivity() {
     private fun change(f: (JSONObject) -> Unit) {
         val m = JSONObject(meeting.toString())
         f(m)
+        val history =
+            m.optJSONArray("speakerHistory") ?: JSONArray().also { m.put("speakerHistory", it) }
+        val beforeSpeakers = meeting.getJSONArray("speakers").objects()
+        fun edit(kind: String, id: String, from: String, to: String) {
+            history.put(
+                JSONObject()
+                    .put("at", System.currentTimeMillis())
+                    .put("kind", kind)
+                    .put("id", id)
+                    .put("from", from)
+                    .put("to", to)
+            )
+        }
+        for (old in beforeSpeakers) {
+            val current =
+                m.getJSONArray("speakers").objects().find {
+                    it.getString("id") == old.getString("id")
+                }
+            if (current != null && current.getString("name") != old.getString("name"))
+                edit(
+                    "RENAME",
+                    old.getString("id"),
+                    old.getString("name"),
+                    current.getString("name"),
+                )
+            if (current == null) {
+                val oldClaim =
+                    meeting.getJSONArray("claims").objects().firstOrNull {
+                        it.optString("speakerId") == old.getString("id")
+                    }
+                val target =
+                    m.getJSONArray("claims")
+                        .objects()
+                        .find { it.getString("id") == oldClaim?.getString("id") }
+                        ?.optString("speakerId") ?: ""
+                edit("MERGE", old.getString("id"), old.getString("id"), target)
+            }
+        }
+        for (old in meeting.getJSONArray("claims").objects()) m.getJSONArray("claims")
+            .objects()
+            .find { it.getString("id") == old.getString("id") }
+            ?.let { c ->
+                if (c.optString("speakerId") != old.optString("speakerId"))
+                    edit(
+                        "REASSIGN",
+                        c.getString("id"),
+                        old.optString("speakerId"),
+                        c.optString("speakerId"),
+                    )
+            }
         meeting = m
+        archive?.snapshot(m)
     }
 
-    private fun background(block: () -> Unit) {
+    private fun background(
+        executor: java.util.concurrent.ExecutorService = work,
+        block: () -> Unit,
+    ) {
         busy = true
-        work.execute {
+        executor.execute {
             try {
                 block()
             } catch (e: Exception) {
@@ -282,14 +407,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun prepare(which: String) {
+        preparing = true
         background {
-            models.prepare(which) { runOnUiThread { notice = it } }
-            audio.prepare()
-            analyst.local.load(models.path(which))
-            analyst.localReady = true
-            runOnUiThread {
-                ready = true
-                notice = "로컬 음성·화자·언어 모델 준비 완료. 성능은 평가 전입니다."
+            try {
+                models.prepare(which) { runOnUiThread { notice = it } }
+                audio.prepare()
+                analyst.local.load(models.path(which))
+                analyst.localReady = true
+                runOnUiThread {
+                    ready = true
+                    notice = "로컬 음성·화자·언어 모델 준비 완료. 성능은 평가 전입니다."
+                }
+            } finally {
+                runOnUiThread { preparing = false }
             }
         }
     }
@@ -308,11 +438,99 @@ class MainActivity : ComponentActivity() {
             return
         }
         try {
+            playToken++
+            player?.release()
+            player = null
+            if (archive == null) {
+                archive =
+                    SessionArchive(
+                        this,
+                        onFailure = { error ->
+                            runOnUiThread {
+                                pauseMeeting("저장 실패")
+                                notice = error
+                            }
+                        },
+                    )
+                archivePath = archive!!.path
+            }
+            check(archive?.failed != true) { "저장 실패 상태입니다. 저장 공간을 확보한 후 회의 종료·새 회의를 시작하세요." }
+            archive!!.resume()
+            stoppedSpeechAt = System.currentTimeMillis()
             audio.start()
             running = true
-            notice = "듣고 있습니다. 원음은 저장하지 않습니다."
+            change { it.put("listeningState", "LISTENING") }
+            notice = "듣고 있습니다 · 전체 마이크 녹음 저장 중"
         } catch (e: Exception) {
+            archive?.pause("마이크 시작 실패")
             notice = e.message ?: "마이크 시작 실패"
+        }
+    }
+
+    private fun pauseMeeting(reason: String = "사용자 일시정지") {
+        running = false
+        stoppedSpeechAt = System.currentTimeMillis()
+        audio.stop()
+        tts.stop()
+        localVoice.stop()
+        speaking = false
+        speechHandler.removeCallbacks(speechStop)
+        archive?.ai(false)
+        archive?.pause(reason)
+        change { it.put("listeningState", "PAUSED") }
+        notice = "듣기 일시정지 · $reason · 자료·판정 유지"
+    }
+
+    private fun playAudio(spans: JSONArray) {
+        pauseMeeting("기록 재생")
+        player?.release()
+        player = null
+        val token = ++playToken
+        fun play(i: Int) {
+            if (token != playToken || i >= spans.length()) return
+            val span = spans.getJSONObject(i)
+            val uri = Uri.parse(span.getString("uri"))
+            if (uri.scheme != "content" || uri.authority != "media") {
+                notice = "이 기기의 다운로드 음성만 재생할 수 있습니다."
+                return
+            }
+            try {
+                val p = android.media.MediaPlayer()
+                player = p
+                p.setDataSource(this, uri)
+                p.setOnPreparedListener {
+                    if (token == playToken) {
+                        p.seekTo(span.getLong("startMs"), android.media.MediaPlayer.SEEK_CLOSEST)
+                        p.setOnSeekCompleteListener {
+                            if (token == playToken) {
+                                p.start()
+                                speechHandler.postDelayed(
+                                    {
+                                        if (token == playToken) {
+                                            p.release()
+                                            player = null
+                                            play(i + 1)
+                                        }
+                                    },
+                                    span.getLong("endMs") - span.getLong("startMs"),
+                                )
+                            }
+                        }
+                    }
+                }
+                p.setOnErrorListener { _, _, _ ->
+                    notice = "음성 파일을 재생할 수 없습니다."
+                    p.release()
+                    true
+                }
+                p.prepareAsync()
+            } catch (e: Exception) {
+                notice = "재생 실패: ${e.message}"
+            }
+        }
+        documentWork.execute {
+            archive?.awaitIdle()
+            runOnUiThread { play(0) }
         }
     }
 
@@ -320,18 +538,29 @@ class MainActivity : ComponentActivity() {
         speechHandler.removeCallbacks(speechStop)
         stoppedSpeechAt = System.currentTimeMillis()
         epoch++
+        analyst.routing.cancel()
         analyst.local.cancel()
         running = false
         audio.stop()
         audio.clearProfiles()
+        DocumentIndex.clear()
         tts.stop()
         localVoice.stop()
         speaking = false
+        change { it.put("listeningState", "ENDED") }
+        archive?.ai(false)
+        archive?.finish()
+        archive = null
+        playToken++
+        player?.release()
+        player = null
         meeting = emptyMeeting()
-        notice = "회의 종료. 미저장 기록과 화자 정보를 폐기했습니다."
+        notice = "회의 종료 · 자동 저장한 녹음·로그는 다운로드 폴더에 유지됩니다."
     }
 
     private fun say(text: String, reset: Boolean = true) {
+        if (!running) return
+        archive?.ai(true)
         if (reset) {
             speechHandler.removeCallbacks(speechStop)
             speechHandler.postDelayed(speechStop, 11000)
@@ -361,20 +590,24 @@ class MainActivity : ComponentActivity() {
         speaker: String?,
         endedAt: Long = System.currentTimeMillis(),
         replaceId: String? = null,
+        audioSpans: JSONArray = JSONArray(),
     ) {
         if (text.isBlank()) return
         if (
-            meeting.getJSONArray("claims").objects().count {
-                it.optString("status") == "PENDING"
-            } >= 4
+            Calculation.analyze(text) == null &&
+                meeting.getJSONArray("claims").objects().count {
+                    it.optString("status") == "PENDING"
+                } >= 4
         ) {
             notice = "검증 대기열이 가득 찼습니다. 잠시 회의를 멈춰 주세요."
             return
         }
+        val pendingAhead =
+            meeting.getJSONArray("claims").objects().count { it.optString("status") == "PENDING" }
         val generation = epoch
         val claimId = replaceId ?: id()
         val docs = JSONArray(meeting.getJSONArray("evidence").toString())
-        analyst.useRemote = remote
+        analyst.mode = executionMode
         analyst.web = web
         analyst.model = model
         change { m ->
@@ -394,6 +627,7 @@ class MainActivity : ComponentActivity() {
                             .put("checkedAt", endedAt)
                             .put("revisions", JSONArray())
                             .put("spoken", false)
+                            .put("audioSpans", audioSpans)
                     )
             else
                 m.getJSONArray("claims")
@@ -401,11 +635,13 @@ class MainActivity : ComponentActivity() {
                     .find { it.getString("id") == claimId }
                     ?.let { revise(it, "PENDING", "이의제기: 재검증 중") }
         }
-        background {
+        val submittedAt = System.currentTimeMillis()
+        background(if (Calculation.analyze(text) != null) calculationWork else work) {
             if (epoch != generation) return@background
-            analyst.useRemote = remote
+            analyst.mode = executionMode
             analyst.web = web
             analyst.model = model
+            analyst.queueDepth = pendingAhead
             val start = System.nanoTime()
             try {
                 val (results, evidence) = analyst.analyze(text, docs)
@@ -428,6 +664,28 @@ class MainActivity : ComponentActivity() {
                                     .put("reason", c.optString("reason"))
                                     .put("evidenceIds", c.getJSONArray("evidenceIds"))
                                     .put("checkedAt", System.currentTimeMillis())
+                                    .put("basis", c.opt("basis"))
+                                    .put(
+                                        "attempts",
+                                        JSONArray(
+                                            (old.optJSONArray("attempts") ?: JSONArray())
+                                                .objects() +
+                                                (c.optJSONArray("attempts") ?: JSONArray())
+                                                    .objects()
+                                                    .map {
+                                                        it.put(
+                                                            "queueMs",
+                                                            maxOf(
+                                                                0,
+                                                                System.currentTimeMillis() -
+                                                                    submittedAt -
+                                                                    (System.nanoTime() - start) /
+                                                                        1000000,
+                                                            ),
+                                                        )
+                                                    }
+                                        ),
+                                    )
                             }
                         m.put(
                             "claims",
@@ -442,10 +700,24 @@ class MainActivity : ComponentActivity() {
                             .objects()
                             .filter { it.getString("id") !in known }
                             .forEach { m.getJSONArray("evidence").put(it) }
-                        if (replaceId != null && old.optBoolean("spoken") && running)
+                        if (
+                            replaceId != null &&
+                                old.optBoolean("spoken") &&
+                                running &&
+                                System.currentTimeMillis() - old.optLong("endedAt") <= 30000
+                        )
                             say("이전 판정을 정정합니다. 재검증 결과를 화면에서 확인해 주세요.")
                     }
-                    notice = "검증 처리 ${(System.nanoTime()-start)/1000000} ms · 모델 준비 이후 실측"
+                    notice =
+                        "검증 처리 ${(System.nanoTime()-start)/1000000} ms · " +
+                            results
+                                .objects()
+                                .firstOrNull()
+                                ?.optJSONArray("attempts")
+                                ?.objects()
+                                ?.joinToString(" → ") {
+                                    "${it.optString("route")} · ${it.optString("reason")}"
+                                }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -454,7 +726,10 @@ class MainActivity : ComponentActivity() {
                             m.getJSONArray("claims")
                                 .objects()
                                 .find { it.getString("id") == claimId }
-                                ?.let { revise(it, "UNVERIFIABLE", e.message ?: "검증 실패") }
+                                ?.let {
+                                    revise(it, "UNVERIFIABLE", e.message ?: "검증 실패")
+                                    it.put("attempts", JSONArray(analyst.lastAttempts.toString()))
+                                }
                         }
                 }
             }
@@ -475,22 +750,30 @@ class MainActivity : ComponentActivity() {
         ) {
             Text("MEETING EPISTEMIC GATEWAY", style = MaterialTheme.typography.labelSmall)
             Text("확신보다, 확인 가능한 근거.", style = MaterialTheme.typography.headlineSmall)
-            Text("v0.1.0 · S24 Ultra · 사전 릴리스", style = MaterialTheme.typography.labelMedium)
+            Text("v0.2.0 · S24 Ultra · 사전 릴리스", style = MaterialTheme.typography.labelMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf("회의", "자료", "화자", "설정").forEachIndexed { i, t ->
+                listOf("회의", "자료", "화자", "설정", "기록").forEachIndexed { i, t ->
                     FilterChip(selected = tab == i, onClick = { tab = i }, label = { Text(t) })
                 }
             }
             Card(Modifier.fillMaxWidth()) { Text(notice, Modifier.padding(14.dp)) }
+            if (archivePath.isNotBlank())
+                Text(
+                    "${if(running) "● 녹음 저장 중" else "녹음 정지"} · $archivePath",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             when (tab) {
                 0 -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { if (running) endMeeting() else startMeeting() },
-                            enabled = !busy || running,
+                            onClick = { if (running) pauseMeeting() else startMeeting() },
+                            enabled = !preparing,
                         ) {
-                            Text(if (running) "회의 종료" else "회의 시작")
+                            Text(
+                                if (running) "듣기 일시정지"
+                                else if (archive != null) "듣기 재개" else "듣기 시작"
+                            )
                         }
                         OutlinedButton(
                             onClick = {
@@ -503,8 +786,9 @@ class MainActivity : ComponentActivity() {
                             Text("AI 발언 중지")
                         }
                     }
+                    TextButton(onClick = { endMeeting() }) { Text("회의 종료") }
                     Text(
-                        "종료하면 미저장 기록은 삭제됩니다. 먼저 필요한 기록을 저장하세요.",
+                        "듣는 동안 전체 마이크 음성을 자동 저장합니다. 16kHz WAV · 시간당 약 115MB · 기기의 음성 처리 효과가 적용될 수 있습니다.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row {
@@ -545,7 +829,8 @@ class MainActivity : ComponentActivity() {
                             submit(input, who)
                             input = ""
                         },
-                        enabled = !busy && input.isNotBlank(),
+                        enabled =
+                            input.isNotBlank() && (!busy || Calculation.analyze(input) != null),
                     ) {
                         Text("주장 검증")
                     }
@@ -569,6 +854,33 @@ class MainActivity : ComponentActivity() {
                                     style = MaterialTheme.typography.titleMedium,
                                 )
                                 Text(c.optString("reason"))
+                                Text(
+                                    c.optString("basis"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                                c.optJSONArray("attempts")?.objects()?.forEach { a ->
+                                    Text(
+                                        "${a.optString("route")} · ${a.optString("reason")} · ${a.optLong("durationMs")}ms · ${a.optString("outcome")} · 입력 ≤${a.optInt("inputTokenUpperBound")}토큰",
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                                c.optJSONArray("audioSpans")
+                                    ?.takeIf { it.length() > 0 }
+                                    ?.let { refs ->
+                                        TextButton(onClick = { playAudio(refs) }) {
+                                            Text("발언 음성 재생")
+                                        }
+                                    }
+                                if (player != null)
+                                    TextButton(
+                                        onClick = {
+                                            playToken++
+                                            player?.release()
+                                            player = null
+                                        }
+                                    ) {
+                                        Text("재생 중지")
+                                    }
                                 Text(
                                     "확인 시각: " +
                                         java.text.DateFormat.getTimeInstance()
@@ -726,7 +1038,8 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("자료 추가")
                     }
-                    meeting.getJSONArray("evidence").objects().forEach { e ->
+                    Text("색인 ${meeting.getJSONArray("evidence").length()}개 · 화면에는 처음 50개 발췌 표시")
+                    meeting.getJSONArray("evidence").objects().take(50).forEach { e ->
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp)) {
                                 Text(e.getString("title"))
@@ -849,6 +1162,7 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = {
                             epoch++
+                            analyst.routing.cancel()
                             analyst.local.cancel()
                             tts.stop()
                             localVoice.stop()
@@ -871,6 +1185,7 @@ class MainActivity : ComponentActivity() {
                                     .put("evidence", JSONArray())
                                     .put("speakers", JSONArray(speakers))
                                 audio.clearProfiles()
+                                DocumentIndex.clear()
                                 speakers.forEach { s ->
                                     s.optJSONArray("embedding")?.let { v ->
                                         audio.profiles[s.getString("id")] =
@@ -893,7 +1208,7 @@ class MainActivity : ComponentActivity() {
                     OutlinedButton(onClick = { prepare("llm-4b") }, enabled = !busy && !running) {
                         Text("Qwen3 4B 비교 모델 준비")
                     }
-                    Text("원음은 저장하지 않습니다. 모델 비교·실시간 정확도 평가는 진행 전입니다.")
+                    Text("전체 마이크 음성을 다운로드 폴더에 자동 저장합니다. 실시간 정확도·지연 기준은 미달인 사전 릴리스입니다.")
                     HorizontalDivider()
                     Text("OpenRouter · 선택 사항", style = MaterialTheme.typography.titleLarge)
                     Text("원음 없이 주장과 필요한 자료 발췌를 전송합니다. 무료 모델도 웹 검색 요금이 발생할 수 있습니다.")
@@ -928,7 +1243,6 @@ class MainActivity : ComponentActivity() {
                                 val keyInfo = router.request("key").getJSONObject("data")
                                 runOnUiThread {
                                     catalog = list
-                                    remote = true
                                     notice = "연결됨 · 키 잔여 한도 ${keyInfo.opt("limit_remaining")}"
                                 }
                             }
@@ -938,10 +1252,45 @@ class MainActivity : ComponentActivity() {
                         Text("코드로 연결")
                     }
                     Row {
-                        Checkbox(remote, { remote = it })
-                        Text("외부 AI 사용", Modifier.padding(top = 10.dp))
-                        Checkbox(web, { web = it })
+                        Checkbox(
+                            web,
+                            {
+                                web = it
+                                settings.edit().putBoolean("web", it).apply()
+                            },
+                        )
                         Text("웹 검색", Modifier.padding(top = 10.dp))
+                    }
+                    Text("실행 모드 · 자동은 5초 지연 예상 시 선택한 모델로 전환")
+                    Row {
+                        ExecutionMode.entries.forEach { mode ->
+                            FilterChip(
+                                executionMode == mode,
+                                {
+                                    executionMode = mode
+                                    settings.edit().putString("mode", mode.name).apply()
+                                },
+                                label = { Text(mode.label) },
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            background {
+                                val list =
+                                    router
+                                        .request("models", auth = false)
+                                        .getJSONArray("data")
+                                        .objects()
+                                        .map {
+                                            it.getString("id") to
+                                                "${it.getString("name")} · 입력 $${it.getJSONObject("pricing").optDouble("prompt")*1e6}/M"
+                                        }
+                                runOnUiThread { catalog = list }
+                            }
+                        }
+                    ) {
+                        Text("모델·가격 목록 새로고침")
                     }
                     var expanded by remember { mutableStateOf(false) }
                     Box {
@@ -954,6 +1303,7 @@ class MainActivity : ComponentActivity() {
                                     text = { Text(name) },
                                     onClick = {
                                         model = id
+                                        settings.edit().putString("model", id).apply()
                                         expanded = false
                                     },
                                 )
@@ -963,7 +1313,8 @@ class MainActivity : ComponentActivity() {
                     OutlinedButton(
                         onClick = {
                             router.disconnect()
-                            remote = false
+                            executionMode = ExecutionMode.LOCAL_ONLY
+                            settings.edit().putString("mode", executionMode.name).apply()
                         }
                     ) {
                         Text("연결 해제")
@@ -988,6 +1339,40 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            if (tab == 4) {
+                Text("자동 저장 기록 · 다운로드 폴더", style = MaterialTheme.typography.titleLarge)
+                TextButton(
+                    onClick = {
+                        background(documentWork) {
+                            val list = SessionArchive.savedMeetings(this@MainActivity)
+                            runOnUiThread { savedMeetings = list }
+                        }
+                    }
+                ) {
+                    Text("기록 목록 새로고침")
+                }
+                savedMeetings.forEach { (path, uri) ->
+                    TextButton(
+                        onClick = {
+                            background(documentWork) {
+                                val raw =
+                                    contentResolver.openInputStream(uri)!!.bufferedReader().use {
+                                        it.readText()
+                                    }
+                                val restored = validateMeeting(raw)
+                                runOnUiThread {
+                                    endMeeting()
+                                    meeting = restored
+                                    tab = 0
+                                    notice = "저장 기록을 열었습니다. 화자 프로필은 자동 연결하지 않습니다."
+                                }
+                            }
+                        }
+                    ) {
+                        Text(path)
+                    }
+                }
+            }
             Spacer(Modifier.height(25.dp))
         }
     }
@@ -995,14 +1380,14 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         if (!::audio.isInitialized) return
-        if (running) {
-            audio.stop()
-            running = false
-            notice = "앱이 전면에서 벗어나 음성 수집을 중지했습니다."
-        }
+        if (running) pauseMeeting("앱이 전면에서 벗어남")
+        playToken++
+        player?.release()
+        player = null
         tts.stop()
         localVoice.stop()
         speaking = false
+        archive?.ai(false)
     }
 
     override fun onDestroy() {
@@ -1012,11 +1397,18 @@ class MainActivity : ComponentActivity() {
         }
         stoppedSpeechAt = System.currentTimeMillis()
         epoch++
+        analyst.routing.cancel()
         analyst.local.cancel()
         audio.stop()
         audio.clearProfiles()
+        DocumentIndex.clear()
         localVoice.close()
         tts.shutdown()
+        archive?.finish()
+        archive = null
+        documentWork.shutdown()
+        calculationWork.shutdown()
+        analyst.routing.close()
         work.shutdown()
         speechHandler.removeCallbacksAndMessages(null)
         super.onDestroy()

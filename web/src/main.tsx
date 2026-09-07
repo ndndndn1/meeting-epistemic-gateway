@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   emptyMeeting,
+  clearEvidenceIndex,
   exportMeeting,
   importMeeting,
   intervention,
@@ -13,6 +14,8 @@ import {
   type Meeting,
   type Status,
 } from "./core";
+import { calculate } from "./calculation";
+import { type Mode } from "./routing";
 import * as ai from "./inference";
 import { readDocument } from "./documents";
 import { Voice } from "./speech";
@@ -20,6 +23,7 @@ import { Capture } from "./capture";
 import { importModel, speechAssets } from "./model-import";
 import "./style.css";
 const labels: Record<Status, string> = {
+  GENERAL_KNOWLEDGE: "일반 지식 판단 · 출처 미확인",
   VERIFIED: "근거 확인",
   EXPERIENCE: "직접 경험",
   HYPOTHESIS: "추정·가설",
@@ -42,7 +46,7 @@ function App() {
     [busy, setBusy] = useState(false),
     [text, setText] = useState(""),
     [speaker, setSpeaker] = useState(""),
-    [remote, setRemote] = useState(false),
+    [mode, setMode] = useState<Mode>("AUTO"),
     [web, setWeb] = useState(true),
     [model, setModel] = useState(""),
     [localModel, setLocalModel] = useState("Qwen3-1.7B-q4f16_1-MLC"),
@@ -60,8 +64,8 @@ function App() {
   const epoch = useRef(0);
   const stoppedSpeechAt = useRef(0);
   const speakerAliases = useRef(new Map<string, string>());
-  const options = useRef({ remote, model, web });
-  options.current = { remote, model, web };
+  const options = useRef({ mode, model, web });
+  options.current = { mode, model, web };
   const live = useRef(false);
   live.current = running;
   useEffect(() => {
@@ -82,10 +86,7 @@ function App() {
     }, 250);
     const visibility = () => {
       if (document.hidden && live.current) {
-        capture.current?.stop();
-        voice.current.stop();
-        live.current = false;
-        setRunning(false);
+        pause();
         setNotice("화면이 전면에서 벗어나 마이크를 중지했습니다.");
       }
     };
@@ -99,7 +100,6 @@ function App() {
     ai.finishLogin()
       .then(async (ok) => {
         if (ok) {
-          setRemote(true);
           setNotice(
             "OpenRouter 연결됨. 무료 모델도 웹 검색 요금이 발생할 수 있습니다.",
           );
@@ -125,6 +125,7 @@ function App() {
   ) {
     if (!value.trim()) return;
     if (
+      !calculate(value) &&
       state.current.claims.filter((c) => c.status === "PENDING").length >= 4
     ) {
       setNotice("검증 대기열이 가득 찼습니다. 잠시 회의를 멈춰 주세요.");
@@ -164,11 +165,13 @@ function App() {
         options.current,
       );
       if (epoch.current !== generation) return;
+      const current = state.current.claims.find((x) => x.id === id) ?? c;
       const claims = result.results.map((r, i) => ({
-        ...c,
+        ...current,
         ...r,
         id: replaceId && i === 0 ? id : `${id}:${i}`,
         checkedAt: Date.now(),
+        attempts: [...(c.attempts ?? []), ...result.attempts],
       }));
       setMeeting((m) => ({
         ...m,
@@ -180,11 +183,20 @@ function App() {
           ),
         ],
       }));
-      if (result.warning) setNotice(result.warning);
+      setReady(ai.localReady());
+      setNotice(
+        result.warning ||
+          result.attempts
+            .map(
+              (a) => `${a.route} · ${a.reason} · ${Math.round(a.durationMs)}ms`,
+            )
+            .join(" → "),
+      );
       if (
         previous?.spoken &&
         claims[0]?.status !== previous.status &&
-        live.current
+        live.current &&
+        Date.now() - endedAt <= 30000
       )
         voice.current.say(
           "이전 판정을 정정합니다. 재검증 결과를 화면에서 확인해 주세요.",
@@ -195,7 +207,15 @@ function App() {
       setMeeting((m) => ({
         ...m,
         claims: m.claims.map((x) =>
-          x.id === id ? revise(x, "UNVERIFIABLE", String(e)) : x,
+          x.id === id
+            ? {
+                ...revise(x, "UNVERIFIABLE", String(e)),
+                attempts: [
+                  ...(x.attempts ?? []),
+                  ...((e as { attempts?: Claim["attempts"] }).attempts ?? []),
+                ],
+              }
+            : x,
         ),
       }));
     } finally {
@@ -212,40 +232,50 @@ function App() {
         setNotice(
           "오프라인 한국어 음성이 없습니다. 음성 설치 전까지 결과를 화면으로 표시합니다.",
         );
-      const cap = new Capture(
-        (t, id, end, certain) => {
-          while (speakerAliases.current.has(id))
-            id = speakerAliases.current.get(id)!;
-          if (!voice.current.speaking) void submit(t, id, end, certain);
-        },
-        (id, embedding) =>
-          setMeeting((m) =>
-            speakerAliases.current.has(id) ||
-            m.speakers.some((s) => s.id === id)
-              ? m
-              : {
-                  ...m,
-                  speakers: [
-                    ...m.speakers,
-                    {
-                      id,
-                      name: `화자 ${String.fromCharCode(65 + m.speakers.length)}`,
-                      embedding,
-                    },
-                  ],
-                },
-          ),
-        () => voice.current.speaking,
-        () => voice.current.interrupt(),
-        (message) => {
-          setNotice(message);
-          setRunning(false);
-        },
-        setNotice,
-      );
+      const cap =
+        capture.current ??
+        new Capture(
+          (t, id, end, certain) => {
+            while (speakerAliases.current.has(id))
+              id = speakerAliases.current.get(id)!;
+            if (live.current && !voice.current.speaking)
+              void submit(t, id, end, certain);
+          },
+          (id, embedding) =>
+            setMeeting((m) =>
+              speakerAliases.current.has(id) ||
+              m.speakers.some((s) => s.id === id)
+                ? m
+                : {
+                    ...m,
+                    speakers: [
+                      ...m.speakers,
+                      {
+                        id,
+                        name: `화자 ${String.fromCharCode(65 + m.speakers.length)}`,
+                        embedding,
+                      },
+                    ],
+                  },
+            ),
+          () => voice.current.speaking,
+          () => voice.current.interrupt(),
+          (message) => {
+            setNotice(message);
+            setRunning(false);
+          },
+          setNotice,
+        );
       capture.current = cap;
       await cap.start();
+      if (document.hidden) {
+        cap.pause();
+        return;
+      }
+      stoppedSpeechAt.current = Date.now();
+      live.current = true;
       setRunning(true);
+      setMeeting((m) => ({ ...m, listeningState: "LISTENING" }));
       setNotice("듣고 있습니다. 앱을 전면에 유지하세요.");
     } catch (e) {
       setNotice(String(e));
@@ -253,7 +283,17 @@ function App() {
       setStarting(false);
     }
   }
+  function pause() {
+    live.current = false;
+    stoppedSpeechAt.current = Date.now();
+    capture.current?.pause();
+    voice.current.stop();
+    setRunning(false);
+    setMeeting((m) => ({ ...m, listeningState: "PAUSED" }));
+    setNotice("듣기 일시정지 · 자료와 판정은 유지됩니다.");
+  }
   function end() {
+    clearEvidenceIndex();
     live.current = false;
     speakerAliases.current.clear();
     epoch.current++;
@@ -281,10 +321,23 @@ function App() {
   }
   async function files(list: FileList | null) {
     if (!list) return;
+    const generation = epoch.current;
     try {
       for (const file of Array.from(list)) {
         const evidence = await readDocument(file);
-        setMeeting((m) => ({ ...m, evidence: [...m.evidence, ...evidence] }));
+        if (generation !== epoch.current) {
+          clearEvidenceIndex();
+          return;
+        }
+        setMeeting((m) => ({
+          ...m,
+          evidence: [
+            ...m.evidence,
+            ...evidence.filter(
+              (e) => !m.evidence.some((x) => x.documentHash === e.documentHash),
+            ),
+          ],
+        }));
       }
       setNotice("자료를 기기에 추가했습니다.");
     } catch (e) {
@@ -330,7 +383,7 @@ function App() {
           <span className="dot" /> 기기에서 처리
           <br />
           <small>
-            {remote
+            {mode !== "LOCAL_ONLY" && ai.connected()
               ? "선택한 주장·자료만 OpenRouter 전송"
               : "원음 저장 없음 · 외부 AI 연결 없음"}
           </small>
@@ -384,13 +437,15 @@ function App() {
                   <button
                     className="primary"
                     disabled={starting}
-                    onClick={running ? end : start}
+                    onClick={running ? pause : start}
                   >
                     {starting
                       ? "음성 모델 준비 중…"
                       : running
-                        ? "회의 종료 · 미저장 기록 삭제"
-                        : "마이크로 회의 시작"}{" "}
+                        ? "듣기 일시정지"
+                        : meeting.listeningState === "PAUSED"
+                          ? "듣기 재개"
+                          : "듣기 시작"}{" "}
                     <span>↗</span>
                   </button>
                   <button
@@ -402,6 +457,7 @@ function App() {
                   >
                     AI 발언 중지
                   </button>
+                  <button onClick={end}>회의 종료</button>
                 </div>
               </div>
               <div className="wave" aria-hidden="true">
@@ -492,6 +548,16 @@ function App() {
                           onChange={(e) =>
                             setMeeting((m) => ({
                               ...m,
+                              speakerHistory: [
+                                ...(m.speakerHistory ?? []),
+                                {
+                                  at: Date.now(),
+                                  kind: "REASSIGN",
+                                  id: c.id,
+                                  from: c.speakerId ?? "",
+                                  to: e.target.value,
+                                },
+                              ],
                               claims: m.claims.map((x) =>
                                 x.id === c.id
                                   ? {
@@ -517,6 +583,18 @@ function App() {
                       </div>
                       <h3>{c.text}</h3>
                       <p>{c.reason}</p>
+                      <small>{c.basis}</small>
+                      {c.attempts?.map((a, i) => (
+                        <div key={i}>
+                          <small>
+                            {a.route} · {a.reason} · {Math.round(a.durationMs)}
+                            ms · {a.outcome}
+                            {a.inputTokenUpperBound !== undefined
+                              ? ` · 입력 ≤${a.inputTokenUpperBound}토큰`
+                              : ""}
+                          </small>
+                        </div>
+                      ))}
                       <small>
                         확인 시각:{" "}
                         {new Date(c.checkedAt).toLocaleTimeString("ko-KR")}
@@ -624,7 +702,7 @@ function App() {
                 </select>
                 <button
                   className="primary"
-                  disabled={busy || !text.trim()}
+                  disabled={!text.trim() || (busy && !calculate(text))}
                   onClick={() => void submit()}
                 >
                   {busy ? "검증 중…" : "주장 검증"}
@@ -708,7 +786,7 @@ function App() {
               자료 추가
             </button>
             <h3>추가된 근거 {meeting.evidence.length}개</h3>
-            {meeting.evidence.map((e) => (
+            {meeting.evidence.slice(0, 50).map((e) => (
               <article key={e.id}>
                 <strong>{e.title}</strong>
                 <p>{e.text.slice(0, 300)}</p>
@@ -770,6 +848,16 @@ function App() {
                     onChange={(e) =>
                       setMeeting((m) => ({
                         ...m,
+                        speakerHistory: [
+                          ...(m.speakerHistory ?? []),
+                          {
+                            at: Date.now(),
+                            kind: "RENAME",
+                            id: s.id,
+                            from: s.name,
+                            to: e.target.value,
+                          },
+                        ],
                         speakers: m.speakers.map((x) =>
                           x.id === s.id ? { ...x, name: e.target.value } : x,
                         ),
@@ -790,6 +878,16 @@ function App() {
                       if (target)
                         setMeeting((m) => ({
                           ...m,
+                          speakerHistory: [
+                            ...(m.speakerHistory ?? []),
+                            {
+                              at: Date.now(),
+                              kind: "MERGE",
+                              id: s.id,
+                              from: s.id,
+                              to: target,
+                            },
+                          ],
                           speakers: m.speakers.filter((x) => x.id !== s.id),
                           claims: m.claims.map((c) =>
                             c.speakerId === s.id
@@ -924,6 +1022,22 @@ function App() {
               원음 없이 검증 대상 주장과 필요한 자료 발췌를 전송합니다. 웹
               검색은 기본 ON이며 무료 모델도 검색 요금이 발생할 수 있습니다.
             </p>
+            <label>
+              실행 모드{" "}
+              <select
+                aria-label="실행 모드"
+                value={mode}
+                onChange={(e) => setMode(e.target.value as Mode)}
+              >
+                <option value="AUTO">자동</option>
+                <option value="LOCAL_ONLY">로컬만</option>
+                <option value="OPENROUTER_FIRST">OpenRouter 우선</option>
+              </select>
+            </label>
+            <p>
+              자동: 5초 초과가 예상되거나 로컬 검증이 5초를 넘으면 선택한
+              OpenRouter 모델로 전환합니다.
+            </p>
             {!ai.connected() ? (
               <button onClick={() => void ai.login()}>
                 OpenRouter로 로그인 ↗
@@ -931,14 +1045,6 @@ function App() {
             ) : (
               <>
                 <p>{balance}</p>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={remote}
-                    onChange={(e) => setRemote(e.target.checked)}
-                  />
-                  외부 AI 사용
-                </label>
                 <label>
                   <input
                     type="checkbox"
@@ -963,7 +1069,7 @@ function App() {
                 <button
                   onClick={() => {
                     ai.disconnect();
-                    setRemote(false);
+                    setMode("LOCAL_ONLY");
                     setNotice("연결을 해제했습니다.");
                   }}
                 >
@@ -976,7 +1082,7 @@ function App() {
             <p>
               실기기 초기 비교에서 정확도·지연 목표에 미달했습니다. 60분 연속
               실행과 다인 회의는 미검증입니다. 결과는 검토를 위한 보조 정보이며,
-              자료가 없으면 검증 불가로 남깁니다.
+              불확실하거나 최신 근거가 필요한 내용은 검증 불가로 남깁니다.
             </p>
             <a href="https://github.com/ndndndn1/meeting-epistemic-gateway/releases">
               S24 Ultra APK · 릴리스 기록 ↗
@@ -984,7 +1090,7 @@ function App() {
           </section>
         )}
         <footer className="bottom">
-          MEETING EPISTEMIC GATEWAY{" "}
+          MEETING EPISTEMIC GATEWAY · v{VERSION} · 사전 릴리스{" "}
           <span>사람의 확신이 아닌, 주장의 근거를 봅니다.</span>
         </footer>
       </main>

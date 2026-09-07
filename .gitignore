@@ -20,3 +20,9 @@ artifacts/
 
 .cxx/
 *.hprof
+
+recordings/
+**/events.jsonl
+**/session.json
+meeting-*.json
+*.pcm

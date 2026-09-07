@@ -3,6 +3,9 @@ import {
   type WebWorkerMLCEngine,
 } from "@mlc-ai/web-llm";
 import { parseVerdicts, retrieve, systemPrompt, type Evidence } from "./core";
+import { calculate } from "./calculation";
+import { boundedInput, predictDelay, route, type Mode } from "./routing";
+import { type Attempt } from "./core";
 import lockedModels from "../../contracts/mlc-models.json";
 const API = "https://openrouter.ai/api/v1";
 let controller = new AbortController();
@@ -127,12 +130,11 @@ async function analyzeOne(
   signal: AbortSignal,
 ) {
   signal.throwIfAborted();
-  let evidence = retrieve(text, docs);
-  const content = JSON.stringify({
-    utterance: text,
-    evidence,
-    hasEvidenceScope: docs.length > 0,
-  });
+  const input = boundedInput(text, docs);
+  let evidence = input.evidence;
+  const content = input.content;
+  if (!options.remote && input.inputTokenUpperBound > 2800)
+    throw Error("로컬 입력 2,800토큰 한도 초과. 주장을 나눠 주세요.");
   const messages = [
     { role: "system" as const, content: systemPrompt },
     { role: "user" as const, content },
@@ -189,6 +191,7 @@ async function analyzeOne(
                   title: c.title,
                   source: c.url,
                   version: "웹 검색",
+                  basis: "WEB",
                   checkedAt: Date.now(),
                 },
               ]
@@ -225,16 +228,12 @@ async function analyzeOne(
         raw = (await r2.json()).choices[0].message.content;
       }
       return {
-        results: parseVerdicts(
-          raw,
-          evidence,
-          docs.length > 0 || webDocs.length > 0,
-        ),
+        results: parseVerdicts(raw, evidence, evidence.length > 0),
         evidence,
         warning,
       };
     } catch (e) {
-      warning = String(e) + " · 로컬 검증으로 전환";
+      throw e;
     }
   }
   signal.throwIfAborted();
@@ -270,7 +269,7 @@ async function analyzeOne(
     ]);
     raw = result.choices[0].message.content ?? "";
     return {
-      results: parseVerdicts(raw, evidence, docs.length > 0),
+      results: parseVerdicts(raw, evidence, evidence.length > 0),
       evidence,
       warning,
     };
@@ -280,13 +279,65 @@ async function analyzeOne(
   }
 }
 
+let queued = 0;
+const recent: number[] = [];
 export function analyze(
   text: string,
   docs: Evidence[],
-  options: { remote: boolean; model: string; web: boolean },
+  options: { mode: Mode; model: string; web: boolean },
 ) {
-  const signal = controller.signal;
-  const task = serial.then(() => analyzeOne(text, docs, options, signal));
+  const arithmetic = calculate(text);
+  if (arithmetic) return Promise.resolve(arithmetic);
+  const signal = controller.signal,
+    submitted = Date.now();
+  const depth = queued++;
+  const task = serial.then(async () => {
+    const input = boundedInput(text, docs),
+      attempts: Attempt[] = [];
+    let warning = "";
+    try {
+      const result = await route({
+        mode: options.mode,
+        available: Boolean(key && options.model),
+        predictedMs: predictDelay(
+          Boolean(engine),
+          input.inputTokenUpperBound,
+          depth,
+          recent,
+        ),
+        signal,
+        local: (s) => analyzeOne(text, docs, { ...options, remote: false }, s),
+        remote: () =>
+          analyzeOne(text, docs, { ...options, remote: true }, signal),
+        onWarning: (s) => {
+          warning = s;
+        },
+        onAttempt: (a) => {
+          attempts.push({
+            ...a,
+            inputTokenUpperBound: input.inputTokenUpperBound,
+            retrievalMs: input.retrievalMs,
+            queueMs: Date.now() - a.durationMs - submitted,
+          });
+          if (a.route === "LOCAL") {
+            recent.push(
+              a.outcome === "completed"
+                ? a.durationMs
+                : Math.max(7500, a.durationMs),
+            );
+            if (recent.length > 5) recent.shift();
+          }
+        },
+      });
+      return { ...result, warning, attempts };
+    } catch (e) {
+      throw Object.assign(e instanceof Error ? e : Error(String(e)), {
+        attempts,
+      });
+    } finally {
+      queued--;
+    }
+  });
   serial = task.catch(() => {});
   return task;
 }

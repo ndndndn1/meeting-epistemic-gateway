@@ -4,7 +4,7 @@
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "appVersion": {
       "type": "string"
@@ -31,6 +31,20 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/Speaker"
+      }
+    },
+    "listeningState": {
+      "enum": [
+        "IDLE",
+        "LISTENING",
+        "PAUSED",
+        "ENDED"
+      ]
+    },
+    "speakerHistory": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SpeakerEdit"
       }
     }
   },
@@ -156,6 +170,18 @@
         "checkedAt": {
           "type": "number",
           "minimum": 0
+        },
+        "basis": {
+          "enum": [
+            "CALCULATION",
+            "MODEL_KNOWLEDGE",
+            "DOCUMENT",
+            "WEB"
+          ]
+        },
+        "documentHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
         }
       },
       "required": [
@@ -182,7 +208,8 @@
             "PENDING",
             "QUESTION",
             "VALUE JUDGMENT",
-            "PROPOSAL"
+            "PROPOSAL",
+            "GENERAL_KNOWLEDGE"
           ]
         },
         "reason": {
@@ -191,6 +218,20 @@
         "at": {
           "type": "number",
           "minimum": 0
+        },
+        "basis": {
+          "enum": [
+            "CALCULATION",
+            "MODEL_KNOWLEDGE",
+            "DOCUMENT",
+            "WEB"
+          ]
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -214,7 +255,8 @@
             "PENDING",
             "QUESTION",
             "VALUE JUDGMENT",
-            "PROPOSAL"
+            "PROPOSAL",
+            "GENERAL_KNOWLEDGE"
           ]
         },
         "reason": {
@@ -234,6 +276,26 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Revision"
+          }
+        },
+        "basis": {
+          "enum": [
+            "CALCULATION",
+            "MODEL_KNOWLEDGE",
+            "DOCUMENT",
+            "WEB"
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Attempt"
+          }
+        },
+        "audioSpans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AudioSpan"
           }
         }
       },
@@ -278,7 +340,8 @@
             "PENDING",
             "QUESTION",
             "VALUE JUDGMENT",
-            "PROPOSAL"
+            "PROPOSAL",
+            "GENERAL_KNOWLEDGE"
           ]
         },
         "reason": {
@@ -306,6 +369,26 @@
         },
         "spoken": {
           "type": "boolean"
+        },
+        "basis": {
+          "enum": [
+            "CALCULATION",
+            "MODEL_KNOWLEDGE",
+            "DOCUMENT",
+            "WEB"
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Attempt"
+          }
+        },
+        "audioSpans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AudioSpan"
+          }
         }
       },
       "required": [
@@ -356,6 +439,107 @@
         "expiresAt",
         "interruptedOnce",
         "state"
+      ],
+      "additionalProperties": false
+    },
+    "Attempt": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "enum": [
+            "CALCULATION",
+            "LOCAL",
+            "OPENROUTER"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "inputTokenUpperBound": {
+          "type": "number",
+          "minimum": 0
+        },
+        "retrievalMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "queueMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "route",
+        "reason",
+        "startedAt",
+        "durationMs",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "AudioSpan": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "startMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "endMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "uri",
+        "file",
+        "startMs",
+        "endMs"
+      ],
+      "additionalProperties": false
+    },
+    "SpeakerEdit": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "number",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "id",
+        "from",
+        "to"
       ],
       "additionalProperties": false
     }

@@ -31,7 +31,7 @@ class AudioIntegration {
                 store,
                 { false },
                 {},
-                { text, speaker, _, _ ->
+                { text, speaker, _, _, _ ->
                     transcript = text
                     attributed = speaker != null
                 },
