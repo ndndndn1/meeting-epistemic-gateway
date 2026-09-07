@@ -1,0 +1,11 @@
+{
+  "kind": "single-speaker-upstream-audio-integration",
+  "representativeMeeting": false,
+  "llmResident": true,
+  "concurrentGeneration": true,
+  "transcript": "조금만 생각을 하면서 살면 훨씬 편할 거야.",
+  "attributed": true,
+  "prepareMs": 2684,
+  "processingMs": 507,
+  "llmCompleted": true
+}

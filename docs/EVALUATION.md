@@ -25,9 +25,10 @@ The 25-second deadline bounds native work and returns `UNVERIFIABLE` on timeout.
 
 - TypeScript and Kotlin consume the same five policy fixtures, including entering/recovering from EVIDENCE REQUIRED, neutral questions/failures and a contradiction breaking a streak.
 - TypeScript tests exercise replay after correction, uncertain attribution, duplicate IDs, fabricated evidence IDs, missing evidence scope, stale speech and sanitized import/export.
-- Web production build and responsive desktop/mobile rendering were checked. No horizontal overflow was observed at the tested mobile viewport.
+- Web production build and responsive desktop/mobile rendering were checked. No horizontal overflow was observed at the tested mobile viewport. Actual Pages returned HTTPS 200; its service worker installed and a network-disabled hard reload worked without page errors. Microphone API acquisition used a synthetic browser input, not a physical room microphone.
 - Browser sherpa WASM initialized with all external requests blocked and previously hash-verified local model fixtures seeded into its cache. An upstream single-speaker Korean WAV produced Korean text and an initial speaker label. This proves an audio path works; it does not establish diarization accuracy.
-- Native debug APK built, signature verified, installed and launched on the connected S24 Ultra. With the 1.7B LLM resident, a Korean single-speaker audio sample was transcribed and attributed in 616 ms after 3,566 ms speech preparation. See [audio integration observation](audio-integration.json). This excludes live capture, a simultaneous LLM generation and meeting ground truth. Additional final-package checks are recorded in the release notes.
+- Local Korean TTS WASM generated 109,192 finite audio samples at 44,100 Hz (about 2.48 seconds) without external network access.
+- Native debug APK built, signature verified, installed and launched on the connected S24 Ultra. With the 1.7B LLM resident, a Korean single-speaker audio sample was transcribed and attributed in 616 ms after 3,566 ms speech preparation. See [audio integration observation](audio-integration.json). This excludes live capture and meeting ground truth. A second [concurrent generation check](audio-concurrent.json) completed the Korean speech path in 507 ms while the 1.7B LLM generated another response; both completed. This short integration check does not establish sustained throughput. Additional final-package checks are recorded in the release notes.
 
 ## Unmet or unverified acceptance gates
 
