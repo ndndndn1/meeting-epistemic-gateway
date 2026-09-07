@@ -40,6 +40,20 @@ class AudioIntegration {
         val start = System.nanoTime()
         try {
             audio.prepare()
+            val concurrent =
+                InstrumentationRegistry.getArguments().getString("concurrent") == "true"
+            val pool = java.util.concurrent.Executors.newSingleThreadExecutor()
+            val started = java.util.concurrent.CountDownLatch(1)
+            val inference =
+                if (concurrent)
+                    pool.submit<String> {
+                        started.countDown()
+                        llm.generate(
+                            "<|im_start|>user\n회의 중 가설과 사실의 차이를 한 문장으로 설명하세요. /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+                        )
+                    }
+                else null
+            if (concurrent) started.await()
             val prepared = System.nanoTime()
             audio.process(samples, System.currentTimeMillis())
             val result =
@@ -47,11 +61,27 @@ class AudioIntegration {
                     .put("kind", "single-speaker-upstream-audio-integration")
                     .put("representativeMeeting", false)
                     .put("llmResident", true)
+                    .put("concurrentGeneration", concurrent)
                     .put("transcript", transcript)
                     .put("attributed", attributed)
                     .put("prepareMs", (prepared - start) / 1000000)
                     .put("processingMs", (System.nanoTime() - prepared) / 1000000)
-            File(context.filesDir, "audio-integration.json").writeText(result.toString(2))
+            if (inference != null) {
+                try {
+                    result.put(
+                        "llmCompleted",
+                        inference.get(30, java.util.concurrent.TimeUnit.SECONDS).isNotBlank(),
+                    )
+                } catch (_: Exception) {
+                    result.put("llmCompleted", false)
+                }
+            }
+            pool.shutdownNow()
+            File(
+                    context.filesDir,
+                    if (concurrent) "audio-concurrent.json" else "audio-integration.json",
+                )
+                .writeText(result.toString(2))
             assertTrue("Korean audio must produce text", transcript.any { it in '가'..'힣' })
         } finally {
             audio.release()

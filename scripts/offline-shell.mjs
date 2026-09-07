@@ -1,4 +1,20 @@
 import { readdir, writeFile } from "node:fs/promises";
+const sha = process.env.GITHUB_SHA ?? "local";
+await writeFile(
+  "dist/site_manifest.json",
+  JSON.stringify({
+    repo: "meeting-epistemic-gateway",
+    repository: "ndndndn1/meeting-epistemic-gateway",
+    sha,
+    short_sha: sha.slice(0, 7),
+    ref_name: process.env.GITHUB_REF_NAME ?? "local",
+    run_id: process.env.GITHUB_RUN_ID ?? "",
+    run_number: process.env.GITHUB_RUN_NUMBER ?? "",
+    deployed_at: new Date().toISOString(),
+    version: "0.1.0",
+    prerelease: true,
+  }),
+);
 const files = (await readdir("dist", { recursive: true })).filter(
   (f) => /\.(js|mjs|css|html|wasm|onnx|json)$/.test(f) && !f.includes("sw.js"),
 );
