@@ -53,3 +53,7 @@ Model downloads in automated Chromium received a hosting-side Human Verification
 ## Dependency review
 
 `npm audit` found zero project package vulnerabilities during this run. Trivy's project dependency scan found zero reported runtime npm vulnerabilities using a database last updated 2026-09-05. That database was stale at scan time. The Node build image scan reported 1 critical, 12 high, 13 medium and 13 low findings, largely build-tool dependencies and OpenSSL. This image is a local, on-demand build environment with no published port; it is not deployed with the static app. The scan is not a clean bill for native AAR/NDK dependencies or the public app. Build containers are stopped after work.
+
+## S24 Chrome on actual Pages
+
+The physical S24 Chrome reported a WebGPU adapter with shader-f16 and maxStorageBufferBindingSize 134,217,728 bytes. It downloaded about 924 MB of MLC weight shards and completed model preparation in about 100 seconds. The speech/diarization Worker also initialized on this page using actual model downloads. However, the first synthetic text verdict stayed pending for more than 120 seconds and uncaptured WebGPU errors were observed. The root cause is not established; API availability and successful weight loading do not prove usable inference. The final web code bounds local analysis to 25 seconds and tears down a stalled worker. This device's web local language-model path remains unvalidated.
