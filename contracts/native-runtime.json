@@ -1,0 +1,14 @@
+[
+  {
+    "id": "llama",
+    "url": "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/5266f24da75dc449bd56cbed7addb9c8e4a6a73e",
+    "sha256": "2de0d87eda4696e9f6bbd771d4c623267f4e95856cce6f99793f91522f993e43",
+    "bytes": 37302025
+  },
+  {
+    "id": "sherpa",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.7/sherpa-onnx-1.13.7.aar",
+    "sha256": "c4ef49e309f24fcee5c106b8a279481aaecaabb078cd37b2cd6e9a62cc8a73c8",
+    "bytes": 49113869
+  }
+]

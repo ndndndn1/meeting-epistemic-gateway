@@ -1,0 +1,76 @@
+{
+  "kind": "synthetic-text-device-integration",
+  "representativeMeeting": false,
+  "results": [
+    {
+      "model": "llm-1.7b",
+      "expected": "VERIFIED",
+      "actual": "VERIFIED",
+      "latencyMs": 27244,
+      "loadWithSpeechMs": 3485
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "CONTRADICTED",
+      "actual": "UNSUPPORTED ASSERTION",
+      "latencyMs": 36381,
+      "loadWithSpeechMs": 3485
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "HYPOTHESIS",
+      "actual": "UNSUPPORTED ASSERTION",
+      "latencyMs": 35339,
+      "loadWithSpeechMs": 3485
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "EXPERIENCE",
+      "actual": "UNVERIFIABLE",
+      "latencyMs": 24392,
+      "loadWithSpeechMs": 3485
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "QUESTION",
+      "actual": "UNVERIFIABLE",
+      "latencyMs": 20355,
+      "loadWithSpeechMs": 3485
+    },
+    {
+      "model": "llm-4b",
+      "expected": "VERIFIED",
+      "actual": "VERIFIED",
+      "latencyMs": 81326,
+      "loadWithSpeechMs": 7541
+    },
+    {
+      "model": "llm-4b",
+      "expected": "CONTRADICTED",
+      "actual": "CONTRADICTED",
+      "latencyMs": 87458,
+      "loadWithSpeechMs": 7541
+    },
+    {
+      "model": "llm-4b",
+      "expected": "HYPOTHESIS",
+      "actual": "EXPERIENCE",
+      "latencyMs": 51802,
+      "loadWithSpeechMs": 7541
+    },
+    {
+      "model": "llm-4b",
+      "expected": "EXPERIENCE",
+      "actual": "EXPERIENCE",
+      "latencyMs": 52053,
+      "loadWithSpeechMs": 7541
+    },
+    {
+      "model": "llm-4b",
+      "expected": "QUESTION",
+      "actual": "HYPOTHESIS",
+      "latencyMs": 51527,
+      "loadWithSpeechMs": 7541
+    }
+  ]
+}

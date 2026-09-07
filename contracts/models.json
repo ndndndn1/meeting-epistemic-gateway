@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "sherpa": "1.13.7",
+  "llama": "v0.4.0",
+  "evaluation": "prerelease-gates-not-passed",
+  "assets": [
+    {
+      "id": "asr",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.int8.onnx",
+      "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+      "bytes": 239233841,
+      "revision": "2365baeacb507f821a0c8120fcee3d484dba7a07",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "tokens",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt",
+      "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+      "bytes": 315894,
+      "revision": "2365baeacb507f821a0c8120fcee3d484dba7a07",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "segmentation",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/9403a6902bb58e3d5ae8c7e77c3422de279db2e0/model.int8.onnx",
+      "sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d",
+      "bytes": 1540506,
+      "revision": "9403a6902bb58e3d5ae8c7e77c3422de279db2e0",
+      "license": "mit"
+    },
+    {
+      "id": "embedding",
+      "url": "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/0743f301363dec56491a490f6d6cbc9d67f9a3bf/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
+      "sha256": "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2",
+      "bytes": 28281164,
+      "revision": "0743f301363dec56491a490f6d6cbc9d67f9a3bf",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "llm-1.7b",
+      "url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/d7f544eead698dbd1f15126ef60b45a1e1933222/Qwen3-1.7B-Q4_K_M.gguf",
+      "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+      "bytes": 1107409472,
+      "revision": "d7f544eead698dbd1f15126ef60b45a1e1933222",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "llm-4b",
+      "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "bytes": 2497280256,
+      "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "vad",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+      "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+      "bytes": 643854,
+      "license": "mit",
+      "revision": "sha256"
+    },
+    {
+      "id": "tts-duration_predictor.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/duration_predictor.int8.onnx",
+      "sha256": "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db",
+      "bytes": 3700147,
+      "revision": "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4",
+      "license": "mit"
+    },
+    {
+      "id": "tts-text_encoder.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/text_encoder.int8.onnx",
+      "sha256": "c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff",
+      "bytes": 36416150,
+      "revision": "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4",
+      "license": "mit"
+    },
+    {
+      "id": "tts-tts.json",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/tts.json",
+      "sha256": "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09",
+      "bytes": 8253,
+      "revision": "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4",
+      "license": "mit"
+    },
+    {
+      "id": "tts-unicode_indexer.bin",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/unicode_indexer.bin",
+      "sha256": "8402ca48e5189a8950138580b0fff64db6f072f24ac07cd54ba8b2fbb9883b30",
+      "bytes": 262144,
+      "revision": "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4",
+      "license": "mit"
+    },
+    {
+      "id": "tts-vector_estimator.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/vector_estimator.int8.onnx",
+      "sha256": "20cd86fa5c6effedfda0e7cffe5b0569ca401c440a0c3a1d72bf39286c0db3fd",
+      "bytes": 78400833,
+      "revision": "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4",
+      "license": "mit"
+    },
+    {
+      "id": "tts-vocoder.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/vocoder.int8.onnx",
+      "sha256": "e923d60f53f95eb1ce235f1dc33ec56d9c057823c96fa6f8acf98f32b0da6152",
+      "bytes": 25991073,
+      "revision": "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4",
+      "license": "mit"
+    },
+    {
+      "id": "tts-voice.bin",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/voice.bin",
+      "sha256": "67d5209b0ee8ce6c74105ffbe12fe6a7628aea3b4ba2fcb308a4a67938a93ce8",
+      "bytes": 517168,
+      "revision": "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4",
+      "license": "mit"
+    }
+  ]
+}

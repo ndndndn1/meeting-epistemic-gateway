@@ -1,0 +1,29 @@
+{
+  "name": "meeting-epistemic-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "node scripts/prepare-web-runtime.mjs && tsc --noEmit && vite build && node scripts/offline-shell.mjs",
+    "test": "vitest run",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "0.2.84",
+    "pdfjs-dist": "5.4.624",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "@vitejs/plugin-react": "5.0.3",
+    "path-browserify": "1.0.1",
+    "prettier": "3.6.2",
+    "sherpa-onnx": "1.13.7",
+    "typescript": "5.9.2",
+    "vite": "7.3.6",
+    "vitest": "3.2.7"
+  }
+}

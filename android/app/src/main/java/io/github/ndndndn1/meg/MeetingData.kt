@@ -1,0 +1,208 @@
+package io.github.ndndndn1.meg
+
+import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
+
+fun id() = UUID.randomUUID().toString()
+
+fun emptyMeeting() =
+    JSONObject()
+        .put("schemaVersion", 1)
+        .put("appVersion", "0.1.0")
+        .put("speakers", JSONArray())
+        .put("claims", JSONArray())
+        .put("evidence", JSONArray())
+
+fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
+
+fun policy(m: JSONObject, speaker: String): Policy {
+    val s = m.getJSONArray("speakers").objects().find { it.getString("id") == speaker }
+    val baseline = s?.optJSONObject("baseline")
+    var p =
+        if (baseline != null)
+            Policy(
+                baseline.optString("mode", "NORMAL"),
+                baseline.optInt("unsupported"),
+                baseline.optInt("calibrated"),
+            )
+        else Policy()
+    val seen = mutableSetOf<String>()
+    for (c in m.getJSONArray("claims").objects().sortedBy { it.getLong("endedAt") }) if (
+        c.optString("speakerId") == speaker &&
+            c.optBoolean("speakerCertain") &&
+            seen.add(c.getString("id"))
+    )
+        p = p.next(c.getString("status"))
+    return p
+}
+
+fun revise(c: JSONObject, status: String, reason: String) {
+    c.getJSONArray("revisions")
+        .put(
+            JSONObject()
+                .put("status", c.getString("status"))
+                .put("reason", c.optString("reason"))
+                .put("at", c.optLong("checkedAt"))
+        )
+    c.put("status", status).put("reason", reason).put("checkedAt", System.currentTimeMillis())
+}
+
+fun addEvidence(m: JSONObject, text: String, title: String, page: Int? = null) {
+    text
+        .chunked(1600)
+        .filter { it.isNotBlank() }
+        .forEach {
+            m.getJSONArray("evidence")
+                .put(
+                    JSONObject()
+                        .put("id", id())
+                        .put("text", it)
+                        .put("title", title)
+                        .put("source", title)
+                        .put("version", "사용자 제공")
+                        .put("page", page)
+                        .put("checkedAt", System.currentTimeMillis())
+                )
+        }
+}
+
+fun exportMeeting(m: JSONObject, profiles: Boolean): String {
+    val copy = JSONObject(m.toString())
+    if (!profiles)
+        copy.getJSONArray("speakers").objects().forEach {
+            it.remove("embedding")
+            it.remove("baseline")
+        }
+    if (profiles) {
+        copy.put(
+            "profileSnapshots",
+            JSONArray(
+                m.getJSONArray("speakers").objects().map { s ->
+                    val p = policy(m, s.getString("id"))
+                    JSONObject(s.toString())
+                        .put(
+                            "baseline",
+                            JSONObject()
+                                .put("mode", p.mode)
+                                .put("unsupported", p.unsupported)
+                                .put("calibrated", p.calibrated),
+                        )
+                }
+            ),
+        )
+    }
+    return copy.toString(2)
+}
+
+fun validateMeeting(raw: String): JSONObject {
+    require(raw.length <= 10_000_000) { "파일이 너무 큽니다." }
+    val m = JSONObject(raw)
+    require(m.getInt("schemaVersion") == 1)
+    val statuses =
+        setOf(
+            "VERIFIED",
+            "CONTRADICTED",
+            "EXPERIENCE",
+            "HYPOTHESIS",
+            "UNSUPPORTED ASSERTION",
+            "UNVERIFIABLE",
+            "PENDING",
+            "QUESTION",
+            "VALUE JUDGMENT",
+            "PROPOSAL",
+        )
+    fun allowed(o: JSONObject, fields: List<String>): JSONObject {
+        val clean = JSONObject()
+        fields.forEach { if (o.has(it)) clean.put(it, o.get(it)) }
+        return clean
+    }
+    fun string(o: JSONObject, key: String, max: Int = 10000) {
+        require(o.get(key) is String && o.getString(key).length <= max) { "문자열 형식 오류: $key" }
+    }
+    fun number(o: JSONObject, key: String) {
+        require(o.get(key) is Number && o.getDouble(key).isFinite() && o.getDouble(key) >= 0) {
+            "숫자 형식 오류: $key"
+        }
+    }
+    for (k in listOf("claims", "speakers", "evidence")) require(
+        m.getJSONArray(k).length() <= if (k == "speakers") 100 else 10000
+    )
+    val speakers =
+        m.getJSONArray("speakers").objects().map { s ->
+            string(s, "id", 100)
+            string(s, "name", 200)
+            s.optJSONArray("embedding")?.let { v ->
+                require(v.length() <= 4096)
+                for (i in 0 until v.length()) require(
+                    v.get(i) is Number && v.getDouble(i).isFinite()
+                )
+            }
+            val clean = allowed(s, listOf("id", "name", "embedding"))
+            s.optJSONObject("baseline")?.let { p ->
+                require(p.getString("mode") in setOf("NORMAL", "EVIDENCE REQUIRED"))
+                number(p, "unsupported")
+                number(p, "calibrated")
+                clean.put("baseline", allowed(p, listOf("mode", "unsupported", "calibrated")))
+            }
+            clean
+        }
+    val evidence =
+        m.getJSONArray("evidence").objects().map { e ->
+            for (k in listOf("id", "text", "title", "source", "version")) string(e, k)
+            number(e, "checkedAt")
+            allowed(e, listOf("id", "text", "title", "source", "version", "checkedAt", "page"))
+        }
+    val claims =
+        m.getJSONArray("claims").objects().map { c ->
+            for (k in listOf("id", "utteranceId", "text", "reason", "status")) string(c, k, 3000)
+            require(c.getString("status") in statuses)
+            for (k in listOf("endedAt", "checkedAt")) number(c, k)
+            require(
+                c.isNull("speakerId") ||
+                    speakers.any { it.getString("id") == c.getString("speakerId") }
+            )
+            val ids = c.getJSONArray("evidenceIds")
+            require(ids.length() <= 100)
+            for (i in 0 until ids.length()) require(ids.get(i) is String)
+            val revisions = c.getJSONArray("revisions")
+            require(revisions.length() <= 1000)
+            val clean =
+                allowed(
+                    c,
+                    listOf(
+                        "id",
+                        "utteranceId",
+                        "text",
+                        "speakerId",
+                        "status",
+                        "reason",
+                        "evidenceIds",
+                        "endedAt",
+                        "checkedAt",
+                    ),
+                )
+            clean
+                .put("speakerCertain", c.optBoolean("speakerCertain"))
+                .put("spoken", true)
+                .put(
+                    "revisions",
+                    JSONArray(
+                        revisions.objects().map { r ->
+                            require(r.getString("status") in statuses)
+                            string(r, "reason", 3000)
+                            number(r, "at")
+                            allowed(r, listOf("status", "reason", "at"))
+                        }
+                    ),
+                )
+            clean
+        }
+    for (items in listOf(speakers, claims, evidence)) require(
+        items.map { it.getString("id") }.distinct().size == items.size
+    )
+    return emptyMeeting()
+        .put("speakers", JSONArray(speakers))
+        .put("claims", JSONArray(claims))
+        .put("evidence", JSONArray(evidence))
+}

@@ -1,0 +1,74 @@
+{
+  "kind": "synthetic-text-device-integration",
+  "representativeMeeting": false,
+  "results": [
+    {
+      "model": "llm-1.7b",
+      "expected": "VERIFIED",
+      "actual": "VERIFIED",
+      "latencyMs": 11509,
+      "loadWithSpeechMs": 4431
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "CONTRADICTED",
+      "actual": "UNSUPPORTED ASSERTION",
+      "latencyMs": 15340,
+      "loadWithSpeechMs": 4431
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "HYPOTHESIS",
+      "actual": "UNVERIFIABLE",
+      "latencyMs": 8761,
+      "loadWithSpeechMs": 4431
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "EXPERIENCE",
+      "actual": "UNVERIFIABLE",
+      "latencyMs": 10942,
+      "loadWithSpeechMs": 4431
+    },
+    {
+      "model": "llm-1.7b",
+      "expected": "QUESTION",
+      "actual": "UNVERIFIABLE",
+      "latencyMs": 7528,
+      "loadWithSpeechMs": 4431
+    },
+    {
+      "model": "llm-4b",
+      "expected": "VERIFIED",
+      "error": "IllegalStateException",
+      "latencyMs": 25023
+    },
+    {
+      "model": "llm-4b",
+      "expected": "CONTRADICTED",
+      "error": "IllegalStateException",
+      "latencyMs": 25016
+    },
+    {
+      "model": "llm-4b",
+      "expected": "HYPOTHESIS",
+      "actual": "EXPERIENCE",
+      "latencyMs": 16877,
+      "loadWithSpeechMs": 12972
+    },
+    {
+      "model": "llm-4b",
+      "expected": "EXPERIENCE",
+      "actual": "EXPERIENCE",
+      "latencyMs": 17017,
+      "loadWithSpeechMs": 12972
+    },
+    {
+      "model": "llm-4b",
+      "expected": "QUESTION",
+      "actual": "HYPOTHESIS",
+      "latencyMs": 17150,
+      "loadWithSpeechMs": 12972
+    }
+  ]
+}

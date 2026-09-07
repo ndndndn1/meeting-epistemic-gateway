@@ -1,0 +1,55 @@
+[
+  {
+    "name": "three unsupported",
+    "statuses": [
+      "UNSUPPORTED ASSERTION",
+      "QUESTION",
+      "UNSUPPORTED ASSERTION",
+      "UNVERIFIABLE",
+      "UNSUPPORTED ASSERTION"
+    ],
+    "mode": "EVIDENCE REQUIRED",
+    "unsupported": 3,
+    "calibrated": 0
+  },
+  {
+    "name": "recover",
+    "statuses": [
+      "UNSUPPORTED ASSERTION",
+      "UNSUPPORTED ASSERTION",
+      "UNSUPPORTED ASSERTION",
+      "EXPERIENCE",
+      "HYPOTHESIS",
+      "VERIFIED"
+    ],
+    "mode": "NORMAL",
+    "unsupported": 0,
+    "calibrated": 3
+  },
+  {
+    "name": "reset streak",
+    "statuses": ["UNSUPPORTED ASSERTION", "VERIFIED", "UNSUPPORTED ASSERTION"],
+    "mode": "NORMAL",
+    "unsupported": 1,
+    "calibrated": 0
+  },
+  {
+    "name": "failed search does not count",
+    "statuses": ["UNVERIFIABLE", "UNVERIFIABLE", "UNVERIFIABLE"],
+    "mode": "NORMAL",
+    "unsupported": 0,
+    "calibrated": 0
+  },
+  {
+    "name": "contradiction breaks consecutive unsupported",
+    "statuses": [
+      "UNSUPPORTED ASSERTION",
+      "UNSUPPORTED ASSERTION",
+      "CONTRADICTED",
+      "UNSUPPORTED ASSERTION"
+    ],
+    "mode": "NORMAL",
+    "unsupported": 1,
+    "calibrated": 0
+  }
+]

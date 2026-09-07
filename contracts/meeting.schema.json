@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ndndndn1.github.io/meeting-epistemic-gateway/meeting.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "appVersion": {
+      "type": "string"
+    },
+    "speakers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Speaker"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Claim"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      }
+    },
+    "profileSnapshots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Speaker"
+      }
+    }
+  },
+  "required": ["schemaVersion", "appVersion", "speakers", "claims", "evidence"],
+  "additionalProperties": false,
+  "$defs": {
+    "SpeakerPolicyState": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": ["NORMAL", "EVIDENCE REQUIRED"]
+        },
+        "unsupported": {
+          "type": "number",
+          "minimum": 0
+        },
+        "calibrated": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["mode", "unsupported", "calibrated"],
+      "additionalProperties": false
+    },
+    "Speaker": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "embedding": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "baseline": {
+          "$ref": "#/$defs/SpeakerPolicyState"
+        }
+      },
+      "required": ["id", "name"],
+      "additionalProperties": false
+    },
+    "Utterance": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "speakerId": {
+          "type": ["string", "null"]
+        },
+        "speakerCertain": {
+          "type": "boolean"
+        },
+        "endedAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "final": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "speakerId",
+        "speakerCertain",
+        "endedAt",
+        "final"
+      ],
+      "additionalProperties": false
+    },
+    "Evidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "page": {
+          "type": ["number", "null"]
+        },
+        "checkedAt": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["id", "text", "title", "source", "version", "checkedAt"],
+      "additionalProperties": false
+    },
+    "Revision": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "EXPERIENCE",
+            "HYPOTHESIS",
+            "UNSUPPORTED ASSERTION",
+            "CONTRADICTED",
+            "UNVERIFIABLE",
+            "PENDING",
+            "QUESTION",
+            "VALUE JUDGMENT",
+            "PROPOSAL"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "at": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["status", "reason", "at"],
+      "additionalProperties": false
+    },
+    "Verdict": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "EXPERIENCE",
+            "HYPOTHESIS",
+            "UNSUPPORTED ASSERTION",
+            "CONTRADICTED",
+            "UNVERIFIABLE",
+            "PENDING",
+            "QUESTION",
+            "VALUE JUDGMENT",
+            "PROPOSAL"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "checkedAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Revision"
+          }
+        }
+      },
+      "required": ["status", "reason", "evidenceIds", "checkedAt", "revisions"],
+      "additionalProperties": false
+    },
+    "Claim": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "utteranceId": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "speakerId": {
+          "type": ["string", "null"]
+        },
+        "speakerCertain": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "EXPERIENCE",
+            "HYPOTHESIS",
+            "UNSUPPORTED ASSERTION",
+            "CONTRADICTED",
+            "UNVERIFIABLE",
+            "PENDING",
+            "QUESTION",
+            "VALUE JUDGMENT",
+            "PROPOSAL"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "endedAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "checkedAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Revision"
+          }
+        },
+        "spoken": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "utteranceId",
+        "text",
+        "speakerId",
+        "speakerCertain",
+        "status",
+        "reason",
+        "evidenceIds",
+        "endedAt",
+        "checkedAt",
+        "revisions",
+        "spoken"
+      ],
+      "additionalProperties": false
+    },
+    "Intervention": {
+      "type": "object",
+      "properties": {
+        "claimId": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "interruptedOnce": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": ["QUEUED", "SPEAKING", "STOPPED", "EXPIRED", "DONE"]
+        }
+      },
+      "required": ["claimId", "text", "expiresAt", "interruptedOnce", "state"],
+      "additionalProperties": false
+    }
+  }
+}

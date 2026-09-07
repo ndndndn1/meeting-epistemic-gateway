@@ -1,0 +1,8 @@
+{
+  "version": "0.1.0",
+  "prerelease": true,
+  "validation": "gates-not-passed",
+  "repository": "https://github.com/ndndndn1/meeting-epistemic-gateway",
+  "apk": "https://github.com/ndndndn1/meeting-epistemic-gateway/releases/tag/v0.1.0",
+  "evaluation": "https://github.com/ndndndn1/meeting-epistemic-gateway/blob/main/docs/EVALUATION.md"
+}
