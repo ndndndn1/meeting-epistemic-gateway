@@ -181,7 +181,7 @@ self.onmessage = async (e) => {
           );
           if (match) speaker = match.id;
           else if (anchors.length < 6) {
-            speaker = `voice-${nextSpeaker++}`;
+            speaker = `voice-${crypto.randomUUID()}`;
             anchors.push({ id: speaker, samples: seg.samples.slice(0, 48000) });
           } else certain = false;
         }

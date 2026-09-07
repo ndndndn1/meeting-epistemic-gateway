@@ -10,10 +10,13 @@ let serial: Promise<unknown> = Promise.resolve();
 export function cancelAnalysis() {
   controller.abort();
   controller = new AbortController();
-  engine?.interruptGenerate();
+  inferenceWorker?.terminate();
+  inferenceWorker = undefined;
+  engine = undefined;
 }
 let key = "";
 let engine: WebWorkerMLCEngine | undefined;
+let inferenceWorker: Worker | undefined;
 export const connected = () => Boolean(key);
 export const disconnect = () => {
   key = "";
@@ -98,19 +101,20 @@ export async function loadLocal(model: string, progress: (s: string) => void) {
       "WebGPU 지원 Chrome·Edge가 필요합니다. APK 또는 선택적 OpenRouter 연결을 사용하세요.",
     );
   await engine?.unload();
-  engine = await CreateWebWorkerMLCEngine(
-    new Worker(new URL("./llm.worker.ts", import.meta.url), { type: "module" }),
-    model,
-    {
-      appConfig: {
-        model_list: lockedModels.map((m) => ({
-          ...m,
-          integrity: { ...m.integrity, onFailure: "error" as const },
-        })),
-      },
-      initProgressCallback: (r) => progress(r.text),
+  inferenceWorker?.terminate();
+  engine = undefined;
+  inferenceWorker = new Worker(new URL("./llm.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  engine = await CreateWebWorkerMLCEngine(inferenceWorker, model, {
+    appConfig: {
+      model_list: lockedModels.map((m) => ({
+        ...m,
+        integrity: { ...m.integrity, onFailure: "error" as const },
+      })),
     },
-  );
+    initProgressCallback: (r) => progress(r.text),
+  });
   await navigator.storage?.persist?.();
 }
 export function localReady() {
@@ -236,19 +240,44 @@ async function analyzeOne(
   signal.throwIfAborted();
   if (!engine)
     throw Error(warning || "로컬 모델을 준비하거나 OpenRouter를 연결하세요.");
-  const result = await engine.chat.completions.create({
-    messages,
-    temperature: 0,
-    max_tokens: 900,
-    response_format: { type: "json_object" },
-    extra_body: { enable_thinking: false },
-  });
-  raw = result.choices[0].message.content ?? "";
-  return {
-    results: parseVerdicts(raw, evidence, docs.length > 0),
-    evidence,
-    warning,
-  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel = () => {};
+  try {
+    const result = await Promise.race([
+      engine.chat.completions.create({
+        messages,
+        temperature: 0,
+        max_tokens: 900,
+        response_format: { type: "json_object" },
+        extra_body: { enable_thinking: false },
+      }),
+      new Promise<never>((_, reject) => {
+        cancel = () => {
+          inferenceWorker?.terminate();
+          inferenceWorker = undefined;
+          engine = undefined;
+          reject(
+            Error(
+              signal.aborted
+                ? "검증을 취소했습니다."
+                : "로컬 검증 25초 시간 초과. 모델을 다시 준비하세요. 다운로드 캐시는 유지됩니다.",
+            ),
+          );
+        };
+        signal.addEventListener("abort", cancel, { once: true });
+        timer = setTimeout(cancel, 25000);
+      }),
+    ]);
+    raw = result.choices[0].message.content ?? "";
+    return {
+      results: parseVerdicts(raw, evidence, docs.length > 0),
+      evidence,
+      warning,
+    };
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", cancel);
+  }
 }
 
 export function analyze(

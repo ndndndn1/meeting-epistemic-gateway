@@ -258,6 +258,7 @@ function App() {
     speakerAliases.current.clear();
     epoch.current++;
     ai.cancelAnalysis();
+    setReady(false);
     capture.current?.stop();
     capture.current = null;
     voice.current.stop();
@@ -515,7 +516,11 @@ function App() {
                         </time>
                       </div>
                       <h3>{c.text}</h3>
-                      <p>{c.reason}</p><small>확인 시각: {new Date(c.checkedAt).toLocaleTimeString("ko-KR")}</small>
+                      <p>{c.reason}</p>
+                      <small>
+                        확인 시각:{" "}
+                        {new Date(c.checkedAt).toLocaleTimeString("ko-KR")}
+                      </small>
                       {c.evidenceIds.map((id) => {
                         const e = meeting.evidence.find((x) => x.id === id);
                         return e ? (
