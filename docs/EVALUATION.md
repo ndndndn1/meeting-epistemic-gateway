@@ -57,3 +57,5 @@ Model downloads in automated Chromium received a hosting-side Human Verification
 ## S24 Chrome on actual Pages
 
 The physical S24 Chrome reported a WebGPU adapter with shader-f16 and maxStorageBufferBindingSize 134,217,728 bytes. It downloaded about 924 MB of MLC weight shards and completed model preparation in about 100 seconds. The speech/diarization Worker also initialized on this page using actual model downloads. However, the first synthetic text verdict stayed pending for more than 120 seconds and uncaptured WebGPU errors were observed. The root cause is not established; API availability and successful weight loading do not prove usable inference. The final web code bounds local analysis to 25 seconds and tears down a stalled worker. This device's web local language-model path remains unvalidated.
+
+The final 25-second bound was verified on S24 Chrome: the first test changed to UNVERIFIABLE in 25,337 ms ([observation](web-device-benchmark.json)). This is a tested failure boundary, not a successful verdict. The release APK was updated in place over a debug build signed with the distribution key; test-only recordings and test packages were removed.

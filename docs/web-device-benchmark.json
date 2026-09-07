@@ -1,0 +1,12 @@
+{
+  "kind": "synthetic-text-S24-Chrome-WebGPU",
+  "representativeMeeting": false,
+  "results": [
+    {
+      "model": "Qwen3-1.7B-q4f16_1-MLC",
+      "expected": "VERIFIED",
+      "actual": "UNVERIFIABLE",
+      "latencyMs": 25337
+    }
+  ]
+}
